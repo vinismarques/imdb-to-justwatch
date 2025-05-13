@@ -29,7 +29,7 @@ This script helps you import your IMDb watchlist and ratings (as a seenlist) int
     ```
     This command reads the project's dependency file (`pyproject.toml`), sets up the isolated environment, and installs everything needed.
 
-    **To activate the virtual environment created by `uv` (if you need to run other commands or check things manually):**
+    **(Optional) To activate the virtual environment created by `uv` (if you need to run other commands or check things manually):**
     *   **On macOS and Linux:**
         ```bash
         source .venv/bin/activate

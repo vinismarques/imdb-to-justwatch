@@ -311,24 +311,19 @@ class JustWatchClient:
 
     def add_to_seenlist(self, justwatch_id: str) -> bool:
         logger.info(f"Adding ID '{justwatch_id}' to seenlist...")
-        # These variables are specific to the seenlist mutation and might need adjustment
-        # based on precise API requirements or user preferences.
-        # The original script had a very complex query and variables.
-        # Simplifying here, but this might need revisiting if the API call fails.
         variables = {
             "platform": "WEB",
             "input": {
                 "id": justwatch_id,
                 "state": True,
-                "country": self.country,  # Assuming this is required by the mutation
+                "country": self.country,
             },
             "country": self.country,
-            "language": self.language,  # Seenlist query used full language e.g. en-US
-            "watchNowFilter": {},  # Empty filter as per original
-            "includeUnreleasedEpisodes": False,  # Default from original
+            "language": self.language,
+            "watchNowFilter": {},
+            "includeUnreleasedEpisodes": False,
         }
         response_data = self._make_request(self.ADD_TO_SEENLIST_MUTATION, variables)
-        # The success check needs to be adapted based on the actual structure of a successful seenlist response
         if response_data and response_data.get("data", {}).get("setInSeenlist", {}).get("title"):
             logger.success(f"Successfully added ID '{justwatch_id}' to seenlist.")
             return True

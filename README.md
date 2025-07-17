@@ -116,14 +116,14 @@ Make sure you have:
 *   **To import your IMDb Watchlist to JustWatch:**
     Run the following command in your terminal (from the `imdb-to-justwatch` directory):
     ```bash
-    uv python import_watchlist.py
+    uv run import_watchlist.py
     ```
     (If you have the `.venv` activated manually, `python import_watchlist.py` will also work).
 
 *   **To import your IMDb Ratings (as a Seenlist) to JustWatch:**
     Run the following command in your terminal (from the `imdb-to-justwatch` directory):
     ```bash
-    uv python import_seenlist.py
+    uv run import_seenlist.py
     ```
     (If you have the `.venv` activated manually, `python import_seenlist.py` will also work).
 

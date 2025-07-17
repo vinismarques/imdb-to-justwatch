@@ -13,6 +13,8 @@ def map_imdb_type_to_justwatch(imdb_type_str: str) -> str | None:
     # Checking for keywords is generally better.
     if "Movie" in imdb_type_str:  # Catches "Movie", "tvMovie"
         return "MOVIE"
+    if "Film" in imdb_type_str:  # Catches "Film"
+        return "MOVIE"
     if "Series" in imdb_type_str:  # Catches "Series", "tvSeries", "miniSeries"
         return "SHOW"
     logger.warning(f"Unsupported IMDb title type: '{imdb_type_str}'. Skipping.")

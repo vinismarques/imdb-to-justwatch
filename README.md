@@ -96,7 +96,7 @@ This script helps you import your IMDb watchlist and ratings (as a seenlist) int
     *   **On Windows (Command Prompt):**
         Replace `Bearer eyJ...your...token...here` with the actual token you copied.
         ```cmd
-        set JUSTWATCH_AUTH_TOKEN="Bearer eyJ...your...token...here"
+        set JUSTWATCH_AUTH_TOKEN=Bearer eyJ...your...token...here
         ```
     *   **On Windows (PowerShell):**
         Replace `Bearer eyJ...your...token...here` with the actual token you copied.

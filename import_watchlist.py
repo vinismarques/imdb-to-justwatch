@@ -93,6 +93,7 @@ def main() -> None:
             for i, row in enumerate(csv_reader):
                 row_num_for_logging = i + 2  # +1 for 1-based index, +1 for header
                 logger.debug(f"Reading row {row_num_for_logging}: {row}")
+                imdb_title = ""
                 try:
                     imdb_title = row.get(IMDB_TITLE_COLUMN, "").strip()
                     imdb_type_str = row.get(IMDB_TYPE_COLUMN, "").strip()

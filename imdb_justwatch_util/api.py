@@ -235,6 +235,13 @@ class JustWatchClient:
             logger.error("JUSTWATCH_AUTH_TOKEN environment variable not set.")
             msg = "Authorization token not found. Please set JUSTWATCH_AUTH_TOKEN."
             raise ValueError(msg)
+
+        # Validate token encoding (common error: truncated token with '…' ellipsis)
+        if not self.auth_token.isascii():
+            logger.error("JUSTWATCH_AUTH_TOKEN contains non-ASCII characters. Did you copy a truncated token ending in '…'?")
+            msg = "JUSTWATCH_AUTH_TOKEN must be ASCII. Check for truncated characters."
+            raise ValueError(msg)
+
         if not self.auth_token.startswith("Bearer "):
             self.auth_token = f"Bearer {self.auth_token}"
         self.headers = {**self.DEFAULT_HEADERS, "Authorization": self.auth_token}
@@ -247,13 +254,16 @@ class JustWatchClient:
             response = requests.post(self.BASE_URL, headers=self.headers, json=payload)
             response.raise_for_status()  # Raises an HTTPError for bad responses (4XX or 5XX)
             return response.json()
+        except requests.exceptions.JSONDecodeError as e:
+            logger.error(f"Failed to decode JSON response: {e}")
+            logger.error(f"Response content: {response.content if 'response' in locals() else 'No response object'}")
+            return None
         except requests.exceptions.RequestException as e:
             logger.error(f"API request failed: {e}")
             logger.error(f"Response content: {response.content if 'response' in locals() else 'No response object'}")
             return None
-        except ValueError as e:  # For JSON decoding errors
-            logger.error(f"Failed to decode JSON response: {e}")
-            logger.error(f"Response content: {response.content if 'response' in locals() else 'No response object'}")
+        except ValueError as e:
+            logger.error(f"Value error during request (possibly encoding or invalid data): {e}")
             return None
 
     def get_title_id(self, title_name: str, title_type: str, release_year: int | str | None = None) -> str | None:

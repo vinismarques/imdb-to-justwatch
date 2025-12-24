@@ -6,8 +6,7 @@ This script helps you import your IMDb watchlist and ratings (as a seenlist) int
 ### Prerequisites:
 *   An IMDb account (where your watchlist and ratings are).
 *   A JustWatch account (where you want to import your lists).
-*   Python 3.7 or newer. If you don't have it, installing `uv` (see below) can help manage Python installations.
-*   **`uv` (Recommended for Setup):** A fast Python project and virtual environment manager. Installation instructions: [uv documentation](https://docs.astral.sh/uv/getting-started/installation/). `uv` can create the virtual environment and install all dependencies for you.
+*   **`uv`:** A fast Python project manager that handles Python installation, virtual environments, and dependencies automatically. Installation instructions: [uv documentation](https://docs.astral.sh/uv/getting-started/installation/).
 *   Git (a tool for downloading code from services like GitHub).
 
 
@@ -20,42 +19,21 @@ This script helps you import your IMDb watchlist and ratings (as a seenlist) int
     cd imdb-to-justwatch # Go into the folder that was created
     ```
 
-2.  **Set up Virtual Environment and Install Dependencies (using `uv`):**
-    `uv` will automatically create a virtual environment (usually named `.venv` in the project folder) if it doesn't exist, and then install the required packages into it.
-
+2.  **Install Dependencies:**
     In your terminal, from the `imdb-to-justwatch` project directory, run:
     ```bash
     uv sync
     ```
-    This command reads the project's dependency file (`pyproject.toml`), sets up the isolated environment, and installs everything needed.
-
-    **(Optional) To activate the virtual environment created by `uv` (if you need to run other commands or check things manually):**
-    *   **On macOS and Linux:**
-        ```bash
-        source .venv/bin/activate
-        ```
-    *   **On Windows (Command Prompt):**
-        ```cmd
-        .venv\Scripts\activate
-        ```
-    *   **On Windows (PowerShell):**
-        ```powershell
-        .venv\Scripts\Activate.ps1
-        ```
-    You should see `(.venv)` at the beginning of your command line prompt.
-    *(Note: For running the main import scripts, direct activation might not be strictly necessary if you always preface python commands with `uv python ...`, but it's good practice to activate it for a development session.)*
+    This will download and set up everything the scripts need to run.
 
 3.  **Prepare Your IMDb Export Files:**
     You need to download two files from your IMDb account: one for your watchlist and one for your ratings (which we'll use as a "seenlist").
-
-    *   **Create an `exports/` Folder:**
-        Inside your project folder (the one containing the scripts), create a new folder named `exports`. This is where you'll save the files from IMDb.
 
     *   **Download Your IMDb Watchlist:**
         a.  Go to your IMDb Watchlist page (you can usually find this by logging into IMDb, clicking your profile name, and selecting "Your Watchlist").
         b.  Scroll all the way to the bottom of your watchlist page.
         c.  Click the "Export this list" link.
-        d.  Save the downloaded file directly into the `exports/` folder you created.
+        d.  Save the downloaded file directly into the `exports/` folder.
         e.  **Crucially, rename this file to `watchlist.csv`**.
 
     *   **Download Your IMDb Ratings (for Seenlist):**
@@ -86,46 +64,52 @@ This script helps you import your IMDb watchlist and ratings (as a seenlist) int
 5.  **Tell the Script Your Authorization Token (Using an Environment Variable):**
     The script needs to know your token. The most secure way to provide it is by setting it as an "environment variable". This is like a temporary note for your computer that the script can read.
 
-    You'll need to do this in the same terminal or command prompt window where you activated the virtual environment and will run the scripts. This setting is usually temporary and only lasts for your current terminal session.
+    You'll need to do this in the same terminal or command prompt window where you will run the scripts. This setting is usually temporary and only lasts for your current terminal session.
 
-    *   **On macOS or Linux:**
-        Replace `Bearer eyJ...your...token...here` with the actual token you copied.
-        ```bash
-        export JUSTWATCH_AUTH_TOKEN="Bearer eyJ...your...token...here"
-        ```
-    *   **On Windows (Command Prompt):**
-        Replace `Bearer eyJ...your...token...here` with the actual token you copied.
+    <details>
+    <summary>macOS / Linux</summary>
+
+    Replace `Bearer eyJ...your...token...here` with the actual token you copied:
+    ```bash
+    export JUSTWATCH_AUTH_TOKEN="Bearer eyJ...your...token...here"
+    ```
+    </details>
+
+    <details>
+    <summary>Windows</summary>
+
+    Replace `Bearer eyJ...your...token...here` with the actual token you copied:
+
+    *   **Command Prompt:**
         ```cmd
         set JUSTWATCH_AUTH_TOKEN=Bearer eyJ...your...token...here
         ```
-    *   **On Windows (PowerShell):**
-        Replace `Bearer eyJ...your...token...here` with the actual token you copied.
+    *   **PowerShell:**
         ```powershell
         $env:JUSTWATCH_AUTH_TOKEN="Bearer eyJ...your...token...here"
         ```
+    </details>
+
     Make sure there are no extra spaces around the `=` sign or inside the quotes. If your token has special characters, keeping it inside the quotes is important.
 
 
 ### Running the Importers:
 
 Make sure you have:
-1.  The virtual environment active (e.g., `(.venv)` is in your prompt if you activated it manually) OR you are using `uv` to run the scripts (see below).
-2.  Placed your `watchlist.csv` and/or `ratings.csv` in the `exports/` folder.
-3.  Set the `JUSTWATCH_AUTH_TOKEN` environment variable in your current terminal session.
+1.  Placed your `watchlist.csv` and/or `ratings.csv` in the `exports/` folder.
+2.  Set the `JUSTWATCH_AUTH_TOKEN` environment variable in your current terminal session.
 
 *   **To import your IMDb Watchlist to JustWatch:**
     Run the following command in your terminal (from the `imdb-to-justwatch` directory):
     ```bash
     uv run import_watchlist.py
     ```
-    (If you have the `.venv` activated manually, `python import_watchlist.py` will also work).
 
 *   **To import your IMDb Ratings (as a Seenlist) to JustWatch:**
     Run the following command in your terminal (from the `imdb-to-justwatch` directory):
     ```bash
     uv run import_seenlist.py
     ```
-    (If you have the `.venv` activated manually, `python import_seenlist.py` will also work).
 
 The scripts will show progress and log any issues they encounter.
 
@@ -133,6 +117,6 @@ The scripts will show progress and log any issues they encounter.
 ### Notes:
 *   The scripts have a built-in delay between actions to be kind to the JustWatch servers and avoid being blocked.
 *   **API Usage:** The JustWatch APIs used by this script are internal. While generally safe for personal, limited use (like importing your lists), they are not officially public or documented for third-party commercial use. Please use responsibly.
-*   Websites like IMDb and JustWatch sometimes change how their pages or export files are structured. If the scripts stop working, it might be because of such a change. In that case, parts of the script (like column numbers or API details) might need to be updated.
+*   Websites like IMDb and JustWatch sometimes change how their pages or export files are structured. If the scripts stop working, it might be because of such a change. Please open an Issue in GitHub if you think that is the case.
 *   **Keep your `JUSTWATCH_AUTH_TOKEN` private!** It's like a password for your JustWatch account. Don't share it publicly. The environment variable method helps keep it more secure than typing it directly into the script.
 *   **Inspiration:** This project was inspired by the work done by @prasanth-G24 in the [Imdb_to_JustWatch](https://github.com/prasanth-G24/Imdb_to_JustWatch) repository.

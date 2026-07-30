@@ -1,6 +1,6 @@
 # Import your IMDb watchlist and ratings to your [JustWatch](https://www.justwatch.com) account
 
-This script helps you import your IMDb watchlist and ratings (as a seenlist) into your JustWatch account.
+This script helps you import your IMDb watchlist and ratings into your JustWatch account. Your ratings can be imported both as a seenlist and, optionally, as likes/dislikes.
 
 
 ### Prerequisites:
@@ -110,6 +110,13 @@ Make sure you have:
     ```bash
     uv run import_seenlist.py
     ```
+
+*   **To like/dislike titles on JustWatch based on your IMDb Ratings:**
+    Run the following command in your terminal (from the `imdb-to-justwatch` directory):
+    ```bash
+    uv run import_likelist.py
+    ```
+    This reads the `Your Rating` column (1-10) from the same `ratings.csv` and gives each title a thumbs up or down on JustWatch: ratings of **7 or higher** are liked, **4 or lower** are disliked, and 5-6 (or unrated titles) are skipped. The thresholds are constants near the top of `import_likelist.py` if you'd like to adjust them. You can also point the script at a different file by passing it as an argument, e.g. `uv run import_likelist.py exports/other_ratings.csv`.
 
 The scripts will show progress and log any issues they encounter.
 

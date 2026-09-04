@@ -12,7 +12,7 @@ from loguru import logger
 # --- Configuration ---
 DEFAULT_COUNTRY = "US"
 DEFAULT_LANGUAGE = "en-US"
-REQUEST_DELAY_SECONDS = 1
+REQUEST_DELAY_SECONDS = 0.5
 LOG_DIR = Path("logs")
 
 

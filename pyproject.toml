@@ -6,16 +6,21 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "loguru>=0.7.3",
-    "python-dotenv>=1.1.0",
-    "requests>=2.32.3",
+    "python-dotenv>=1.2.3",
+    "requests>=2.34.2",
 ]
 
 [dependency-groups]
 dev = [
-    "pytest>=8.3.0",
-    "ruff>=0.8.0",
-    "ty>=0.0.1a5",
+    "pytest>=9.1.1",
+    "ruff>=0.16.5",
+    "ty>=0.0.77",
 ]
+
+[tool.uv]
+# Ignore releases from the last 3 days: a freshly published version is the
+# window in which a compromised or yanked release is most likely to be live.
+exclude-newer = "-P3D"
 
 [tool.ruff]
 line-length = 120

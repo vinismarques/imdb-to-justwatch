@@ -13,7 +13,10 @@ class JustWatchClient:
         "accept": "application/json, text/plain, */*",
         "origin": "https://www.justwatch.com",
         "accept-language": "en-US",
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.106 Safari/537.36 OPR/38.0.2220.41",
+        "User-Agent": (
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/51.0.2704.106 Safari/537.36 OPR/38.0.2220.41"
+        ),
     }
 
     SEARCH_QUERY_TEMPLATE = """
@@ -94,7 +97,14 @@ class JustWatchClient:
     """
 
     ADD_TO_SEENLIST_MUTATION = """
-    mutation SetInSeenlist($input: SetInSeenlistInput!, $country: Country!, $language: Language!, $includeUnreleasedEpisodes: Boolean!, $watchNowFilter: WatchNowOfferFilter!, $platform: Platform! = WEB) {
+    mutation SetInSeenlist(
+      $input: SetInSeenlistInput!
+      $country: Country!
+      $language: Language!
+      $includeUnreleasedEpisodes: Boolean!
+      $watchNowFilter: WatchNowOfferFilter!
+      $platform: Platform! = WEB
+    ) {
       setInSeenlist(input: $input) {
         title {
           id
@@ -278,7 +288,10 @@ class JustWatchClient:
 
         # Validate token encoding (common error: truncated token with '…' ellipsis)
         if not self.auth_token.isascii():
-            logger.error("JUSTWATCH_AUTH_TOKEN contains non-ASCII characters. Did you copy a truncated token ending in '…'?")
+            logger.error(
+                "JUSTWATCH_AUTH_TOKEN contains non-ASCII characters. "
+                "Did you copy a truncated token ending in '…'?"
+            )
             msg = "JUSTWATCH_AUTH_TOKEN must be ASCII. Check for truncated characters."
             raise ValueError(msg)
 

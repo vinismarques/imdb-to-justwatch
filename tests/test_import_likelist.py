@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import import_likelist
 import pytest
+
+import import_likelist
 from import_likelist import process_likelist_entry
 
 HEADER = "Const,Your Rating,Title,Title Type,Year\n"

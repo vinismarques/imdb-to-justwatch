@@ -13,7 +13,23 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=8.3.0",
+    "ruff>=0.8.0",
 ]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["build", "*.ipynb"]
+
+[tool.ruff.lint]
+select = [
+    "E",       # pycodestyle errors, including E501 against line-length
+    "F",       # pyflakes
+    "I",       # import sorting
+    "PLC0415", # import-outside-top-level
+]
+
+[tool.ty.environment]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

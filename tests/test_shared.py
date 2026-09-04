@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+
 from imdb_justwatch_util.shared import map_imdb_type_to_justwatch, parse_dry_run
 
 

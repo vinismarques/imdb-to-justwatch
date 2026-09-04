@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
+
 import import_seenlist
 import import_watchlist
-import pytest
 
 CASES = [
     (import_watchlist, "watchlist", "Const,Title,Title Type,Year\n"),

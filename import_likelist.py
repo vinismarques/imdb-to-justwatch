@@ -7,6 +7,8 @@ from collections import Counter
 from time import sleep
 
 from dotenv import load_dotenv
+from loguru import logger
+
 from imdb_justwatch_util.api import JustWatchClient
 from imdb_justwatch_util.shared import (
     DEFAULT_COUNTRY,
@@ -15,7 +17,6 @@ from imdb_justwatch_util.shared import (
     map_imdb_type_to_justwatch,
     parse_dry_run,
 )
-from loguru import logger
 
 load_dotenv()
 

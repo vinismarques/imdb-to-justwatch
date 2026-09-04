@@ -15,6 +15,7 @@ from imdb_justwatch_util.shared import (
     REQUEST_DELAY_SECONDS,
     configure_logging,
     map_imdb_type_to_justwatch,
+    open_imdb_export,
     parse_dry_run,
     write_unmatched_report,
 )
@@ -122,7 +123,7 @@ def main(dry_run: bool) -> None:
     unmatched: list[dict[str, str]] = []
 
     try:
-        with open(CSV_FILE_PATH, encoding="ISO-8859-1", newline="") as f:
+        with open_imdb_export(CSV_FILE_PATH) as f:
             csv_reader = csv.DictReader(f)
 
             # Verify necessary columns exist in the CSV header

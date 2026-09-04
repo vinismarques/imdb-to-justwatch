@@ -46,7 +46,7 @@ def write_csv(tmp_path):
 
     def _write(name: str, rows: str) -> str:
         path = tmp_path / name
-        path.write_text(rows, encoding="ISO-8859-1")
+        path.write_text(rows, encoding="utf-8")
         return str(path)
 
     return _write

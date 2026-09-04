@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -13,6 +14,23 @@ DEFAULT_COUNTRY = "US"
 DEFAULT_LANGUAGE = "en-US"
 REQUEST_DELAY_SECONDS = 1
 LOG_DIR = Path("logs")
+
+
+def open_imdb_export(path: str | Path) -> io.StringIO:
+    """Decodes an IMDb export, guessing the encoding only when UTF-8 is genuinely wrong.
+
+    A wrong guess here fails silently rather than loudly: every latin-1-family codec accepts
+    any byte sequence, so decoding UTF-8 as one turns 'Shogun' into mojibake that no longer
+    matches anything on JustWatch. Strict UTF-8 first means that mistake raises instead.
+    """
+    raw = Path(path).read_bytes()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        # Re-saving an export through Excel is the usual way one stops being UTF-8.
+        logger.warning(f"'{path}' is not valid UTF-8. Falling back to cp1252; check titles with accents.")
+        text = raw.decode("cp1252", errors="replace")
+    return io.StringIO(text, newline="")
 
 
 def configure_logging(script_name: str) -> Path:

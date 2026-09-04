@@ -59,7 +59,7 @@ This script helps you import your IMDb watchlist and ratings into your JustWatch
     *   Click on one of these `graphql` entries.
     *   A new panel will show details for that request. Look for a section called **"Request Headers"** (or similar, like "Headers" then "Request Headers").
     *   Inside Request Headers, find the line that says `Authorization`. The value next to it will start with `Bearer ` followed by a long string of characters (e.g., `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`).
-    *   **Copy this entire value**, including the `Bearer ` part and all the characters after it. This is your authorization token.
+    *   Right-click and **copy the entire value**. It should include the `Bearer ` part and all the characters after it. This is your authorization token.
 
 5.  **Tell the Script Your Authorization Token (Using an Environment Variable):**
     The script needs to know your token. The most secure way to provide it is by setting it as an "environment variable". This is like a temporary note for your computer that the script can read.

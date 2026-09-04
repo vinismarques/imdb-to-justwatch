@@ -1,9 +1,29 @@
 from __future__ import annotations
 
 import os
+import re
+from difflib import SequenceMatcher
 
 import requests
 from loguru import logger
+
+# Below this similarity a candidate is a different film, not a spelling variant of the one we asked for.
+TITLE_MATCH_THRESHOLD = 0.85
+
+YEAR_TOLERANCE = 1
+
+
+def normalize_title(title: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
+
+
+def title_distance(query: str, candidate: str) -> float:
+    """0.0 for an exact match after normalization, approaching 1.0 as titles diverge."""
+    return 1.0 - SequenceMatcher(None, normalize_title(query), normalize_title(candidate)).ratio()
+
+
+def titles_match(query: str, candidate: str) -> bool:
+    return title_distance(query, candidate) <= 1.0 - TITLE_MATCH_THRESHOLD
 
 
 class JustWatchClient:
@@ -318,22 +338,17 @@ class JustWatchClient:
             logger.error(f"Value error during request (possibly encoding or invalid data): {e}")
             return None
 
-    def get_title_id(self, title_name: str, title_type: str, release_year: int | str | None = None) -> str | None:
-        logger.info(f"Searching for {title_type} '{title_name}' (Year: {release_year or 'Any'})...")
-
+    def _search_for_title(self, title_name: str, title_type: str, year: int | None) -> str | None:
+        """Returns the ID of the first result whose title matches, or None."""
         search_filter = {
             "objectTypes": [title_type.upper()],
             "excludeIrrelevantTitles": False,
             "includeTitlesWithoutUrl": True,
             "searchQuery": title_name,
         }
-        if release_year:
-            try:
-                search_filter["releaseYear"] = {"min": int(release_year), "max": int(release_year)}
-            except ValueError:
-                logger.warning(
-                    f"Invalid release year '{release_year}' for '{title_name}'. Searching without year constraint."
-                )
+        if year is not None:
+            # JustWatch and IMDb disagree by a year on titles with staggered releases.
+            search_filter["releaseYear"] = {"min": year - YEAR_TOLERANCE, "max": year + YEAR_TOLERANCE}
 
         variables = {
             "searchTitlesSortBy": "POPULAR",
@@ -341,25 +356,51 @@ class JustWatchClient:
             "language": self.language.split("-")[0],  # API expects 'en', not 'en-US' for language in some contexts
             "country": self.country,
         }
-
         response_data = self._make_request(self.SEARCH_QUERY_TEMPLATE, variables)
-
-        if response_data and response_data.get("data", {}).get("popularTitles", {}).get("edges"):
-            edges = response_data["data"]["popularTitles"]["edges"]
-            if edges:
-                # Add more sophisticated matching here if needed (e.g. year, exact title match)
-                # For now, taking the first result
-                node = edges[0]["node"]
-                found_id = node["id"]
-                found_title = node["content"]["title"]
-                found_year = node["content"].get("originalReleaseYear", "N/A")
-                found_type = node.get("objectType", "N/A")
-                logger.success(f"Found: '{found_title}' ({found_type}, {found_year}) with ID: {found_id}")
-                return found_id
-            logger.warning(f"No results found for '{title_name}' ({title_type}, {release_year}).")
+        if response_data is None:
+            logger.error(f"Could not retrieve ID for '{title_name}'. Response: {response_data}")
             return None
-        logger.error(f"Could not retrieve ID for '{title_name}'. Response: {response_data}")
-        return None
+
+        candidates = []
+        for edge in response_data.get("data", {}).get("popularTitles", {}).get("edges", []):
+            node = edge["node"]
+            found_title = node["content"]["title"]
+            found_year = node["content"].get("originalReleaseYear", "N/A")
+            if not titles_match(title_name, found_title):
+                logger.debug(f"Ignoring '{found_title}' ({found_year}): does not match '{title_name}'.")
+                continue
+            candidates.append(node)
+
+        if not candidates:
+            return None
+
+        # Results arrive by popularity, which ranks a similarly-named film above the one we asked for.
+        best = min(candidates, key=lambda node: title_distance(title_name, node["content"]["title"]))
+        logger.success(
+            f"Found: '{best['content']['title']}' ({best.get('objectType', 'N/A')}, "
+            f"{best['content'].get('originalReleaseYear', 'N/A')}) with ID: {best['id']}"
+        )
+        return best["id"]
+
+    def get_title_id(self, title_name: str, title_type: str, release_year: int | str | None = None) -> str | None:
+        logger.info(f"Searching for {title_type} '{title_name}' (Year: {release_year or 'Any'})...")
+
+        year: int | None = None
+        if release_year:
+            try:
+                year = int(release_year)
+            except ValueError:
+                logger.warning(
+                    f"Invalid release year '{release_year}' for '{title_name}'. Searching without year constraint."
+                )
+
+        found_id = self._search_for_title(title_name, title_type, year)
+        if found_id is None and year is not None:
+            logger.info(f"No match near {year} for '{title_name}'. Retrying without the year.")
+            found_id = self._search_for_title(title_name, title_type, None)
+        if found_id is None:
+            logger.warning(f"No result for '{title_name}' ({title_type}, {release_year}) had a matching title.")
+        return found_id
 
     def add_to_watchlist(self, justwatch_id: str) -> bool:
         logger.info(f"Adding ID '{justwatch_id}' to watchlist...")

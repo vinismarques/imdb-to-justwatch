@@ -35,8 +35,6 @@ select = [
     "PLC0415", # import-outside-top-level
 ]
 
-[tool.ty.environment]
-
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]

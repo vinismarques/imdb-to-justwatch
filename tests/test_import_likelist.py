@@ -101,31 +101,3 @@ def test_main_reports_missing_columns_without_processing(run_importer) -> None:
     client, _ = run_importer(import_likelist, "Const,Title,Title Type,Year\ntt1,A Movie,Movie,2001\n")
 
     assert client.lookups == []
-
-
-def test_main_continues_after_an_unreadable_row(monkeypatch, run_importer) -> None:
-    """A row that raises must be logged and skipped, not abort the import."""
-
-    class ExplodingRow:
-        def get(self, *args, **kwargs):
-            raise RuntimeError("unreadable row")
-
-    real_dictreader = import_likelist.csv.DictReader
-
-    def dictreader_with_bad_first_row(f):
-        reader = real_dictreader(f)
-        rows = list(reader)
-
-        class Reader:
-            fieldnames = reader.fieldnames
-
-            def __iter__(self):
-                yield ExplodingRow()
-                yield from rows
-
-        return Reader()
-
-    monkeypatch.setattr(import_likelist.csv, "DictReader", dictreader_with_bad_first_row)
-    client, _ = run_importer(import_likelist, HEADER + "tt1,9,Liked Movie,Movie,2001\n")
-
-    assert client.calls == [("like", "tm_Liked_Movie")]

@@ -8,7 +8,7 @@ from time import sleep
 from dotenv import load_dotenv
 from loguru import logger
 
-from imdb_justwatch_util.api import JustWatchClient
+from imdb_justwatch_util.api import AuthenticationError, JustWatchClient
 from imdb_justwatch_util.shared import (
     DEFAULT_COUNTRY,
     DEFAULT_LANGUAGE,
@@ -16,6 +16,7 @@ from imdb_justwatch_util.shared import (
     configure_logging,
     map_imdb_type_to_justwatch,
     parse_dry_run,
+    write_unmatched_report,
 )
 
 load_dotenv()
@@ -35,6 +36,9 @@ DISLIKE_MAX_RATING = 4
 
 # Outcomes that reached the JustWatch API, and so must be followed by a delay.
 NETWORK_OUTCOMES = frozenset({"liked", "disliked", "would_like", "would_dislike", "not_found", "failed"})
+
+# Outcomes the user has to follow up on by hand.
+NEEDS_ATTENTION = frozenset({"not_found", "unsupported_type", "failed", "invalid_rating"})
 
 
 def process_likelist_entry(
@@ -115,6 +119,7 @@ def main(dry_run: bool) -> None:
 
     logger.info(f"Reading ratings items from: {CSV_FILE_PATH}")
     outcomes: Counter[str] = Counter()
+    unmatched: list[dict[str, str]] = []
 
     try:
         with open(CSV_FILE_PATH, encoding="ISO-8859-1", newline="") as f:
@@ -153,6 +158,19 @@ def main(dry_run: bool) -> None:
                         client, imdb_title, imdb_type_str, imdb_year_str, imdb_rating_str, dry_run
                     )
                     outcomes[outcome] += 1
+                    if outcome in NEEDS_ATTENTION:
+                        unmatched.append(
+                            {
+                                "Title": imdb_title,
+                                "Title Type": imdb_type_str,
+                                "Year": imdb_year_str,
+                                "Reason": outcome,
+                            }
+                        )
+
+                except AuthenticationError as e:
+                    logger.critical(f"{e} Aborting: every remaining title would fail the same way.")
+                    break
 
                 except Exception:  # Catching general exceptions for safety during row processing
                     logger.exception(
@@ -172,6 +190,7 @@ def main(dry_run: bool) -> None:
         logger.critical(f"An unexpected error occurred during CSV processing: {e}")
         return
 
+    write_unmatched_report("import_likelist", unmatched)
     logger.info("--- Import Summary ---")
     logger.info(f"Total rows read from CSV: {sum(outcomes.values())}")
     for outcome, count in outcomes.most_common():

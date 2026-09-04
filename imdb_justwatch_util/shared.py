@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -23,6 +24,21 @@ def configure_logging(script_name: str) -> Path:
     logger.add(log_path, level="DEBUG", encoding="utf-8")
     logger.info(f"Writing a full log of this run to {log_path}")
     return log_path
+
+
+def write_unmatched_report(script_name: str, unmatched: list[dict[str, str]]) -> Path | None:
+    """Records the titles a run could not import, which have to be re-entered by hand."""
+    if not unmatched:
+        return None
+
+    LOG_DIR.mkdir(exist_ok=True)
+    report_path = LOG_DIR / f"{script_name}-unmatched-{datetime.now():%Y%m%d-%H%M%S}.csv"
+    with report_path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["Title", "Title Type", "Year", "Reason"])
+        writer.writeheader()
+        writer.writerows(unmatched)
+    logger.warning(f"{len(unmatched)} titles need your attention. They are listed in {report_path}")
+    return report_path
 
 
 def parse_dry_run(description: str) -> bool:

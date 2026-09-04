@@ -7,7 +7,7 @@ from time import sleep
 from dotenv import load_dotenv
 from loguru import logger
 
-from imdb_justwatch_util.api import JustWatchClient
+from imdb_justwatch_util.api import AuthenticationError, JustWatchClient
 from imdb_justwatch_util.shared import (
     DEFAULT_COUNTRY,
     DEFAULT_LANGUAGE,
@@ -15,6 +15,7 @@ from imdb_justwatch_util.shared import (
     configure_logging,
     map_imdb_type_to_justwatch,
     parse_dry_run,
+    write_unmatched_report,
 )
 
 load_dotenv()
@@ -27,16 +28,19 @@ IMDB_TITLE_COLUMN = "Title"
 IMDB_TYPE_COLUMN = "Title Type"
 IMDB_YEAR_COLUMN = "Year"
 
+# Outcomes the user has to follow up on by hand.
+NEEDS_ATTENTION = frozenset({"not_found", "unsupported_type", "failed"})
+
 
 def process_seenlist_entry(
     client: JustWatchClient, imdb_title: str, imdb_type: str, imdb_year: str, dry_run: bool
-) -> None:
+) -> str:
     """Processes a single entry from the ratings CSV for the seenlist."""
     logger.info(f"Processing for seenlist: Title='{imdb_title}', Type='{imdb_type}', Year='{imdb_year}'")
 
     justwatch_type = map_imdb_type_to_justwatch(imdb_type)
     if not justwatch_type:
-        return
+        return "unsupported_type"
 
     try:
         year_int = int(imdb_year)
@@ -46,16 +50,19 @@ def process_seenlist_entry(
 
     justwatch_id = client.get_title_id(title_name=imdb_title, title_type=justwatch_type, release_year=year_int)
 
-    if justwatch_id:
-        logger.info(f"Found JustWatch ID '{justwatch_id}' for '{imdb_title}'.")
-        if dry_run:
-            logger.info(f"[dry run] Would add '{imdb_title}' (ID: {justwatch_id}) to JustWatch seenlist.")
-        elif client.add_to_seenlist(justwatch_id):
-            logger.success(f"Successfully added '{imdb_title}' (ID: {justwatch_id}) to JustWatch seenlist.")
-        else:
-            logger.error(f"Failed to add '{imdb_title}' (ID: {justwatch_id}) to JustWatch seenlist.")
-    else:
+    if not justwatch_id:
         logger.warning(f"Could not find '{imdb_title}' on JustWatch for seenlist. Skipping.")
+        return "not_found"
+
+    logger.info(f"Found JustWatch ID '{justwatch_id}' for '{imdb_title}'.")
+    if dry_run:
+        logger.info(f"[dry run] Would add '{imdb_title}' (ID: {justwatch_id}) to JustWatch seenlist.")
+        return "would_add"
+    if client.add_to_seenlist(justwatch_id):
+        logger.success(f"Successfully added '{imdb_title}' (ID: {justwatch_id}) to JustWatch seenlist.")
+        return "added"
+    logger.error(f"Failed to add '{imdb_title}' (ID: {justwatch_id}) to JustWatch seenlist.")
+    return "failed"
 
 
 def main(dry_run: bool) -> None:
@@ -77,6 +84,7 @@ def main(dry_run: bool) -> None:
 
     logger.info(f"Reading ratings items from: {CSV_FILE_PATH}")
     entries_processed = 0
+    unmatched: list[dict[str, str]] = []
 
     try:
         with open(CSV_FILE_PATH, encoding="ISO-8859-1", newline="") as f:
@@ -98,6 +106,7 @@ def main(dry_run: bool) -> None:
             for i, row in enumerate(csv_reader):
                 row_num_for_logging = i + 2  # For logging purposes
                 logger.debug(f"Reading row {row_num_for_logging}: {row}")
+                imdb_title = ""
                 try:
                     imdb_title = row.get(IMDB_TITLE_COLUMN, "").strip()
                     imdb_type_str = row.get(IMDB_TYPE_COLUMN, "").strip()
@@ -107,8 +116,21 @@ def main(dry_run: bool) -> None:
                         logger.warning(f"Skipping row {row_num_for_logging} due to empty title.")
                         continue
 
-                    process_seenlist_entry(client, imdb_title, imdb_type_str, imdb_year_str, dry_run)
+                    outcome = process_seenlist_entry(client, imdb_title, imdb_type_str, imdb_year_str, dry_run)
                     entries_processed += 1
+                    if outcome in NEEDS_ATTENTION:
+                        unmatched.append(
+                            {
+                                "Title": imdb_title,
+                                "Title Type": imdb_type_str,
+                                "Year": imdb_year_str,
+                                "Reason": outcome,
+                            }
+                        )
+
+                except AuthenticationError as e:
+                    logger.critical(f"{e} Aborting: every remaining title would fail the same way.")
+                    break
 
                 except Exception:
                     logger.exception(
@@ -126,6 +148,7 @@ def main(dry_run: bool) -> None:
         logger.critical(f"An unexpected error occurred during CSV processing: {e}")
         return
 
+    write_unmatched_report("import_seenlist", unmatched)
     logger.info("--- Import Summary ---")
     logger.info(f"Total entries processed from CSV for seenlist: {entries_processed}")
     logger.success("IMDb ratings import to JustWatch seenlist finished.")

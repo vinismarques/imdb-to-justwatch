@@ -7,6 +7,11 @@ from difflib import SequenceMatcher
 import requests
 from loguru import logger
 
+
+class AuthenticationError(Exception):
+    """The JustWatch token was rejected. Every later request would fail the same way."""
+
+
 # Below this similarity a candidate is a different film, not a spelling variant of the one we asked for.
 TITLE_MATCH_THRESHOLD = 0.85
 
@@ -300,7 +305,8 @@ class JustWatchClient:
     def __init__(self, country: str = "US", language: str = "en-US") -> None:
         self.country = country
         self.language = language
-        self.auth_token = os.getenv("JUSTWATCH_AUTH_TOKEN")
+        # Shells differ on quoting: Windows CMD keeps the quotes in the value, so strip them here.
+        self.auth_token = os.getenv("JUSTWATCH_AUTH_TOKEN", "").strip().strip("\"'").strip()
         if not self.auth_token:
             logger.error("JUSTWATCH_AUTH_TOKEN environment variable not set.")
             msg = "Authorization token not found. Please set JUSTWATCH_AUTH_TOKEN."
@@ -328,6 +334,16 @@ class JustWatchClient:
             return response.json()
         except requests.exceptions.JSONDecodeError as e:
             logger.error(f"Failed to decode JSON response: {e}")
+            logger.error(f"Response content: {response.content if 'response' in locals() else 'No response object'}")
+            return None
+        except requests.exceptions.HTTPError as e:
+            status = e.response.status_code if e.response is not None else None
+            if status in (401, 403):
+                logger.error(f"JustWatch rejected the token ({status}). Copy a fresh one and try again.")
+                logger.error(f"Response content: {e.response.content if e.response is not None else 'None'}")
+                msg = f"JustWatch rejected JUSTWATCH_AUTH_TOKEN ({status})."
+                raise AuthenticationError(msg) from e
+            logger.error(f"API request failed: {e}")
             logger.error(f"Response content: {response.content if 'response' in locals() else 'No response object'}")
             return None
         except requests.exceptions.RequestException as e:

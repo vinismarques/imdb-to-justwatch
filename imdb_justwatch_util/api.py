@@ -1,9 +1,59 @@
 from __future__ import annotations
 
 import os
+import re
+from collections.abc import Sequence
+from difflib import SequenceMatcher
+from time import sleep
 
 import requests
 from loguru import logger
+
+
+class AuthenticationError(Exception):
+    """The JustWatch token was rejected. Every later request would fail the same way."""
+
+
+class RateLimitedError(Exception):
+    """JustWatch throttled the run and kept throttling it. The title's status is unknown."""
+
+
+# Below this similarity a candidate is a different film, not a spelling variant of the one we asked for.
+TITLE_MATCH_THRESHOLD = 0.85
+
+YEAR_TOLERANCE = 1
+
+# A throttled request tells us nothing about the title, so retry before giving up. Reporting
+# a 429 as 'not_found' would send the user to re-add a title JustWatch may well have.
+RATE_LIMIT_MAX_ATTEMPTS = 3
+RATE_LIMIT_BACKOFF_SECONDS = 2
+
+# Widened window for the second attempt. Dropping the year constraint entirely matched
+# 'The Wave' (2008) to an unrelated 2015 film, so the retry stays anchored to the year.
+FALLBACK_YEAR_TOLERANCE = 3
+
+
+def normalize_title(title: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
+
+
+def title_distance(query: str, candidate: str) -> float:
+    """0.0 for an exact match after normalization, approaching 1.0 as titles diverge."""
+    return 1.0 - SequenceMatcher(None, normalize_title(query), normalize_title(candidate)).ratio()
+
+
+def titles_match(query: str, candidate: str) -> bool:
+    return title_distance(query, candidate) <= 1.0 - TITLE_MATCH_THRESHOLD
+
+
+def best_alias_distance(aliases: Sequence[str], candidate: str) -> float:
+    """Distance to whichever alias fits the candidate best.
+
+    JustWatch answers with one name per title, and which one varies: the English title for
+    'WALL-E', the original for 'Shingeki no Kyojin', the full canonical for 'Borat: Cultural
+    Learnings...'. IMDb ships both names per row, so a title is a match when either one fits.
+    """
+    return min(title_distance(alias, candidate) for alias in aliases)
 
 
 class JustWatchClient:
@@ -13,7 +63,10 @@ class JustWatchClient:
         "accept": "application/json, text/plain, */*",
         "origin": "https://www.justwatch.com",
         "accept-language": "en-US",
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.106 Safari/537.36 OPR/38.0.2220.41",
+        "User-Agent": (
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/51.0.2704.106 Safari/537.36 OPR/38.0.2220.41"
+        ),
     }
 
     SEARCH_QUERY_TEMPLATE = """
@@ -94,7 +147,14 @@ class JustWatchClient:
     """
 
     ADD_TO_SEENLIST_MUTATION = """
-    mutation SetInSeenlist($input: SetInSeenlistInput!, $country: Country!, $language: Language!, $includeUnreleasedEpisodes: Boolean!, $watchNowFilter: WatchNowOfferFilter!, $platform: Platform! = WEB) {
+    mutation SetInSeenlist(
+      $input: SetInSeenlistInput!
+      $country: Country!
+      $language: Language!
+      $includeUnreleasedEpisodes: Boolean!
+      $watchNowFilter: WatchNowOfferFilter!
+      $platform: Platform! = WEB
+    ) {
       setInSeenlist(input: $input) {
         title {
           id
@@ -270,7 +330,8 @@ class JustWatchClient:
     def __init__(self, country: str = "US", language: str = "en-US") -> None:
         self.country = country
         self.language = language
-        self.auth_token = os.getenv("JUSTWATCH_AUTH_TOKEN")
+        # Shells differ on quoting: Windows CMD keeps the quotes in the value, so strip them here.
+        self.auth_token = os.getenv("JUSTWATCH_AUTH_TOKEN", "").strip().strip("\"'").strip()
         if not self.auth_token:
             logger.error("JUSTWATCH_AUTH_TOKEN environment variable not set.")
             msg = "Authorization token not found. Please set JUSTWATCH_AUTH_TOKEN."
@@ -278,7 +339,9 @@ class JustWatchClient:
 
         # Validate token encoding (common error: truncated token with '…' ellipsis)
         if not self.auth_token.isascii():
-            logger.error("JUSTWATCH_AUTH_TOKEN contains non-ASCII characters. Did you copy a truncated token ending in '…'?")
+            logger.error(
+                "JUSTWATCH_AUTH_TOKEN contains non-ASCII characters. Did you copy a truncated token ending in '…'?"
+            )
             msg = "JUSTWATCH_AUTH_TOKEN must be ASCII. Check for truncated characters."
             raise ValueError(msg)
 
@@ -288,40 +351,74 @@ class JustWatchClient:
         # Referer can be dynamic based on operation, or a sensible default
         self.headers["referer"] = f"https://www.justwatch.com/{country.lower()}/watchlist"
 
+    @staticmethod
+    def _retry_after_seconds(response, attempt: int) -> float:
+        """Honours a Retry-After header when JustWatch sends one, else backs off exponentially."""
+        header = response.headers.get("Retry-After") if response is not None else None
+        if header:
+            try:
+                return max(0.0, float(header))
+            except ValueError:
+                # Retry-After may also be an HTTP-date, which the backoff below covers well enough.
+                logger.debug(f"Could not read Retry-After '{header}' as seconds.")
+        return RATE_LIMIT_BACKOFF_SECONDS * 2 ** (attempt - 1)
+
     def _make_request(self, query: str, variables: dict) -> dict | None:
         payload = {"query": query, "variables": variables}
-        try:
-            response = requests.post(self.BASE_URL, headers=self.headers, json=payload)
-            response.raise_for_status()  # Raises an HTTPError for bad responses (4XX or 5XX)
-            return response.json()
-        except requests.exceptions.JSONDecodeError as e:
-            logger.error(f"Failed to decode JSON response: {e}")
-            logger.error(f"Response content: {response.content if 'response' in locals() else 'No response object'}")
-            return None
-        except requests.exceptions.RequestException as e:
-            logger.error(f"API request failed: {e}")
-            logger.error(f"Response content: {response.content if 'response' in locals() else 'No response object'}")
-            return None
-        except ValueError as e:
-            logger.error(f"Value error during request (possibly encoding or invalid data): {e}")
-            return None
+        for attempt in range(1, RATE_LIMIT_MAX_ATTEMPTS + 1):
+            try:
+                response = requests.post(self.BASE_URL, headers=self.headers, json=payload)
+                response.raise_for_status()  # Raises an HTTPError for bad responses (4XX or 5XX)
+                return response.json()
+            except requests.exceptions.JSONDecodeError as e:
+                logger.error(f"Failed to decode JSON response: {e}")
+                logger.error(f"Response content: {response.content if 'response' in locals() else 'No response'}")
+                return None
+            except requests.exceptions.HTTPError as e:
+                status = e.response.status_code if e.response is not None else None
+                if status in (401, 403):
+                    logger.error(f"JustWatch rejected the token ({status}). Copy a fresh one and try again.")
+                    logger.error(f"Response content: {e.response.content if e.response is not None else 'None'}")
+                    msg = f"JustWatch rejected JUSTWATCH_AUTH_TOKEN ({status})."
+                    raise AuthenticationError(msg) from e
+                if status == 429:
+                    if attempt == RATE_LIMIT_MAX_ATTEMPTS:
+                        msg = f"JustWatch is rate limiting this run (429 after {attempt} attempts)."
+                        raise RateLimitedError(msg) from e
+                    wait = self._retry_after_seconds(e.response, attempt)
+                    logger.warning(f"JustWatch returned 429. Waiting {wait}s before attempt {attempt + 1}.")
+                    sleep(wait)
+                    continue
+                logger.error(f"API request failed: {e}")
+                logger.error(f"Response content: {response.content if 'response' in locals() else 'No response'}")
+                return None
+            except requests.exceptions.RequestException as e:
+                logger.error(f"API request failed: {e}")
+                logger.error(f"Response content: {response.content if 'response' in locals() else 'No response'}")
+                return None
+            except ValueError as e:
+                logger.error(f"Value error during request (possibly encoding or invalid data): {e}")
+                return None
+        return None
 
-    def get_title_id(self, title_name: str, title_type: str, release_year: int | str | None = None) -> str | None:
-        logger.info(f"Searching for {title_type} '{title_name}' (Year: {release_year or 'Any'})...")
-
+    def _search_for_title(
+        self,
+        title_name: str,
+        title_type: str,
+        year: int | None,
+        aliases: Sequence[str],
+        tolerance: int = YEAR_TOLERANCE,
+    ) -> str | None:
+        """Returns the ID of the first result matching any alias, or None."""
         search_filter = {
             "objectTypes": [title_type.upper()],
             "excludeIrrelevantTitles": False,
             "includeTitlesWithoutUrl": True,
             "searchQuery": title_name,
         }
-        if release_year:
-            try:
-                search_filter["releaseYear"] = {"min": int(release_year), "max": int(release_year)}
-            except ValueError:
-                logger.warning(
-                    f"Invalid release year '{release_year}' for '{title_name}'. Searching without year constraint."
-                )
+        if year is not None:
+            # JustWatch and IMDb disagree by a year on titles with staggered releases.
+            search_filter["releaseYear"] = {"min": year - tolerance, "max": year + tolerance}
 
         variables = {
             "searchTitlesSortBy": "POPULAR",
@@ -329,25 +426,68 @@ class JustWatchClient:
             "language": self.language.split("-")[0],  # API expects 'en', not 'en-US' for language in some contexts
             "country": self.country,
         }
-
         response_data = self._make_request(self.SEARCH_QUERY_TEMPLATE, variables)
-
-        if response_data and response_data.get("data", {}).get("popularTitles", {}).get("edges"):
-            edges = response_data["data"]["popularTitles"]["edges"]
-            if edges:
-                # Add more sophisticated matching here if needed (e.g. year, exact title match)
-                # For now, taking the first result
-                node = edges[0]["node"]
-                found_id = node["id"]
-                found_title = node["content"]["title"]
-                found_year = node["content"].get("originalReleaseYear", "N/A")
-                found_type = node.get("objectType", "N/A")
-                logger.success(f"Found: '{found_title}' ({found_type}, {found_year}) with ID: {found_id}")
-                return found_id
-            logger.warning(f"No results found for '{title_name}' ({title_type}, {release_year}).")
+        if response_data is None:
+            logger.error(f"Could not retrieve ID for '{title_name}'. Response: {response_data}")
             return None
-        logger.error(f"Could not retrieve ID for '{title_name}'. Response: {response_data}")
-        return None
+
+        candidates = []
+        for edge in response_data.get("data", {}).get("popularTitles", {}).get("edges", []):
+            node = edge["node"]
+            found_title = node["content"]["title"]
+            found_year = node["content"].get("originalReleaseYear", "N/A")
+            if best_alias_distance(aliases, found_title) > 1.0 - TITLE_MATCH_THRESHOLD:
+                logger.debug(f"Ignoring '{found_title}' ({found_year}): does not match any of {list(aliases)}.")
+                continue
+            candidates.append(node)
+
+        if not candidates:
+            return None
+
+        # Results arrive by popularity, which ranks a similarly-named film above the one we asked for.
+        best = min(candidates, key=lambda node: best_alias_distance(aliases, node["content"]["title"]))
+        logger.success(
+            f"Found: '{best['content']['title']}' ({best.get('objectType', 'N/A')}, "
+            f"{best['content'].get('originalReleaseYear', 'N/A')}) with ID: {best['id']}"
+        )
+        return best["id"]
+
+    def get_title_id(
+        self,
+        title_name: str,
+        title_type: str,
+        release_year: int | str | None = None,
+        original_title: str | None = None,
+    ) -> str | None:
+        logger.info(f"Searching for {title_type} '{title_name}' (Year: {release_year or 'Any'})...")
+
+        aliases = [title_name]
+        if original_title and normalize_title(original_title) != normalize_title(title_name):
+            aliases.append(original_title)
+            logger.debug(f"Also accepting the original title '{original_title}' for '{title_name}'.")
+
+        year: int | None = None
+        if release_year:
+            try:
+                year = int(release_year)
+            except ValueError:
+                logger.warning(
+                    f"Invalid release year '{release_year}' for '{title_name}'. Searching without year constraint."
+                )
+
+        found_id = self._search_for_title(title_name, title_type, year, aliases)
+        if found_id is None and year is not None:
+            logger.info(
+                f"No match within {YEAR_TOLERANCE}y of {year} for '{title_name}'. "
+                f"Widening to {FALLBACK_YEAR_TOLERANCE}y."
+            )
+            found_id = self._search_for_title(title_name, title_type, year, aliases, FALLBACK_YEAR_TOLERANCE)
+        if found_id is None and len(aliases) > 1:
+            logger.info(f"Retrying the search under the original title '{original_title}'.")
+            found_id = self._search_for_title(aliases[1], title_type, year, aliases, FALLBACK_YEAR_TOLERANCE)
+        if found_id is None:
+            logger.warning(f"No result for '{title_name}' ({title_type}, {release_year}) had a matching title.")
+        return found_id
 
     def add_to_watchlist(self, justwatch_id: str) -> bool:
         logger.info(f"Adding ID '{justwatch_id}' to watchlist...")

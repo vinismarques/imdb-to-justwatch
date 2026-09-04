@@ -2,18 +2,22 @@ from __future__ import annotations
 
 import csv
 import os
-import sys
 from time import sleep
 
 from dotenv import load_dotenv
-from imdb_justwatch_util.api import JustWatchClient
+from loguru import logger
+
+from imdb_justwatch_util.api import AuthenticationError, JustWatchClient, RateLimitedError
 from imdb_justwatch_util.shared import (
     DEFAULT_COUNTRY,
     DEFAULT_LANGUAGE,
     REQUEST_DELAY_SECONDS,
+    configure_logging,
     map_imdb_type_to_justwatch,
+    open_imdb_export,
+    parse_dry_run,
+    write_unmatched_report,
 )
-from loguru import logger
 
 load_dotenv()
 
@@ -24,15 +28,26 @@ CSV_FILE_PATH = os.path.join("exports", "watchlist.csv")  # Path to the IMDb wat
 IMDB_TITLE_COLUMN = "Title"
 IMDB_TYPE_COLUMN = "Title Type"
 IMDB_YEAR_COLUMN = "Year"
+IMDB_ORIGINAL_TITLE_COLUMN = "Original Title"
+
+# Outcomes the user has to follow up on by hand.
+NEEDS_ATTENTION = frozenset({"not_found", "unsupported_type", "failed"})
 
 
-def process_watchlist_entry(client: JustWatchClient, imdb_title: str, imdb_type: str, imdb_year: str) -> None:
+def process_watchlist_entry(
+    client: JustWatchClient,
+    imdb_title: str,
+    imdb_type: str,
+    imdb_year: str,
+    dry_run: bool,
+    imdb_original_title: str = "",
+) -> str:
     """Processes a single entry from the watchlist CSV."""
     logger.info(f"Processing: Title='{imdb_title}', Type='{imdb_type}', Year='{imdb_year}'")
 
     justwatch_type = map_imdb_type_to_justwatch(imdb_type)
     if not justwatch_type:
-        return
+        return "unsupported_type"
 
     try:
         year_int = int(imdb_year)
@@ -40,20 +55,32 @@ def process_watchlist_entry(client: JustWatchClient, imdb_title: str, imdb_type:
         logger.warning(f"Invalid year format '{imdb_year}' for title '{imdb_title}'. Attempting search without year.")
         year_int = None
 
-    justwatch_id = client.get_title_id(title_name=imdb_title, title_type=justwatch_type, release_year=year_int)
+    justwatch_id = client.get_title_id(
+        title_name=imdb_title,
+        title_type=justwatch_type,
+        release_year=year_int,
+        original_title=imdb_original_title,
+    )
 
-    if justwatch_id:
-        logger.info(f"Found JustWatch ID '{justwatch_id}' for '{imdb_title}'.")
-        if client.add_to_watchlist(justwatch_id):
-            logger.success(f"Successfully added '{imdb_title}' (ID: {justwatch_id}) to JustWatch watchlist.")
-        else:
-            logger.error(f"Failed to add '{imdb_title}' (ID: {justwatch_id}) to JustWatch watchlist.")
-    else:
+    if not justwatch_id:
         logger.warning(f"Could not find '{imdb_title}' on JustWatch. Skipping.")
+        return "not_found"
+
+    logger.info(f"Found JustWatch ID '{justwatch_id}' for '{imdb_title}'.")
+    if dry_run:
+        logger.info(f"[dry run] Would add '{imdb_title}' (ID: {justwatch_id}) to JustWatch watchlist.")
+        return "would_add"
+    if client.add_to_watchlist(justwatch_id):
+        logger.success(f"Successfully added '{imdb_title}' (ID: {justwatch_id}) to JustWatch watchlist.")
+        return "added"
+    logger.error(f"Failed to add '{imdb_title}' (ID: {justwatch_id}) to JustWatch watchlist.")
+    return "failed"
 
 
-def main() -> None:
+def main(dry_run: bool) -> None:
     logger.info("Starting IMDb watchlist import to JustWatch...")
+    if dry_run:
+        logger.info("Dry run: titles will be looked up, but nothing will be added to your account.")
 
     if not os.path.exists(CSV_FILE_PATH):
         logger.error(f"CSV file not found at '{CSV_FILE_PATH}'. Please ensure it exists.")
@@ -69,11 +96,10 @@ def main() -> None:
 
     logger.info(f"Reading watchlist items from: {CSV_FILE_PATH}")
     entries_processed = 0
+    unmatched: list[dict[str, str]] = []
 
     try:
-        with open(
-            CSV_FILE_PATH, encoding="ISO-8859-1", newline=""
-        ) as f:  # Added newline='' for csv.reader/DictReader best practice
+        with open_imdb_export(CSV_FILE_PATH) as f:
             csv_reader = csv.DictReader(f)  # Use DictReader
 
             # Verify necessary columns exist in the CSV header
@@ -98,13 +124,41 @@ def main() -> None:
                     imdb_title = row.get(IMDB_TITLE_COLUMN, "").strip()
                     imdb_type_str = row.get(IMDB_TYPE_COLUMN, "").strip()
                     imdb_year_str = row.get(IMDB_YEAR_COLUMN, "").strip()
+                    imdb_original_title = row.get(IMDB_ORIGINAL_TITLE_COLUMN, "").strip()
 
                     if not imdb_title:
                         logger.warning(f"Skipping row {row_num_for_logging} due to empty title.")
                         continue
 
-                    process_watchlist_entry(client, imdb_title, imdb_type_str, imdb_year_str)
+                    outcome = process_watchlist_entry(
+                        client, imdb_title, imdb_type_str, imdb_year_str, dry_run, imdb_original_title
+                    )
                     entries_processed += 1
+                    if outcome in NEEDS_ATTENTION:
+                        unmatched.append(
+                            {
+                                "Title": imdb_title,
+                                "Title Type": imdb_type_str,
+                                "Year": imdb_year_str,
+                                "Reason": outcome,
+                            }
+                        )
+
+                except AuthenticationError as e:
+                    logger.critical(f"{e} Aborting: every remaining title would fail the same way.")
+                    break
+
+                except RateLimitedError as e:
+                    logger.critical(f"{e} Aborting: a throttled title cannot be reported as missing.")
+                    unmatched.append(
+                        {
+                            "Title": imdb_title,
+                            "Title Type": imdb_type_str,
+                            "Year": imdb_year_str,
+                            "Reason": "rate_limited",
+                        }
+                    )
+                    break
 
                 except Exception:  # Catching general exceptions for safety during row processing
                     logger.exception(
@@ -122,13 +176,14 @@ def main() -> None:
         logger.critical(f"An unexpected error occurred during CSV processing: {e}")
         return
 
+    write_unmatched_report("import_watchlist", unmatched)
     logger.info("--- Import Summary ---")
     logger.info(f"Total entries processed from CSV: {entries_processed}")
     logger.success("IMDb watchlist import to JustWatch finished.")
 
 
 if __name__ == "__main__":
-    logger.remove()
-    logger.add(sys.stderr, level="INFO")
+    dry_run = parse_dry_run("Import your IMDb watchlist into your JustWatch watchlist.")
+    configure_logging("import_watchlist")
 
-    main()
+    main(dry_run)

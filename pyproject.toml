@@ -6,6 +6,35 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "loguru>=0.7.3",
-    "python-dotenv>=1.1.0",
-    "requests>=2.32.3",
+    "python-dotenv>=1.2.3",
+    "requests>=2.34.2",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.5",
+    "ty>=0.0.77",
+]
+
+[tool.uv]
+# Ignore releases from the last 3 days: a freshly published version is the
+# window in which a compromised or yanked release is most likely to be live.
+exclude-newer = "-P3D"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["build", "*.ipynb"]
+
+[tool.ruff.lint]
+select = [
+    "E",       # pycodestyle errors, including E501 against line-length
+    "F",       # pyflakes
+    "I",       # import sorting
+    "PLC0415", # import-outside-top-level
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

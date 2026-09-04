@@ -289,8 +289,7 @@ class JustWatchClient:
         # Validate token encoding (common error: truncated token with '…' ellipsis)
         if not self.auth_token.isascii():
             logger.error(
-                "JUSTWATCH_AUTH_TOKEN contains non-ASCII characters. "
-                "Did you copy a truncated token ending in '…'?"
+                "JUSTWATCH_AUTH_TOKEN contains non-ASCII characters. Did you copy a truncated token ending in '…'?"
             )
             msg = "JUSTWATCH_AUTH_TOKEN must be ASCII. Check for truncated characters."
             raise ValueError(msg)

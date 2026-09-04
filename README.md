@@ -48,18 +48,16 @@ This script helps you import your IMDb watchlist and ratings into your JustWatch
 4.  **Get Your JustWatch Authorization Token:**
     This token allows the script to act on your behalf on JustWatch (like adding movies to your lists).
 
-    *   Open your web browser (like Chrome, Firefox, or Edge).
     *   Go to [JustWatch](https://www.justwatch.com/) and log in to your account.
-    *   Open your browser's **Developer Tools**. You can usually do this by:
-        *   Pressing the `F12` key.
-        *   Right-clicking anywhere on the JustWatch page and selecting "Inspect" or "Inspect Element".
-    *   In the Developer Tools panel that appears, find and click on the **"Network"** tab.
-    *   Now, perform an action on the JustWatch website that requires you to be logged in. For example, add any movie to your JustWatch watchlist or mark a movie as "seen". This will make your browser send a request that includes your authorization token.
-    *   In the Network tab, you'll see a list of requests. Look for entries that start with `graphql` (you might see `graphql?operationName=...`). You can use the filter bar in the Network tab to search for "graphql".
-    *   Click on one of these `graphql` entries.
-    *   A new panel will show details for that request. Look for a section called **"Request Headers"** (or similar, like "Headers" then "Request Headers").
-    *   Inside Request Headers, find the line that says `Authorization`. The value next to it will start with `Bearer ` followed by a long string of characters (e.g., `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`).
-    *   Right-click and **copy the entire value**. It should include the `Bearer ` part and all the characters after it. This is your authorization token.
+    *   Open your browser's **Developer Tools**, by pressing `F12` or by right-clicking the page and selecting "Inspect".
+    *   Open the **Network** tab (1) and type `graphql` in the filter box (2).
+    *   Perform any action that requires you to be logged in, such as adding a movie to your JustWatch watchlist. Requests named `graphql` will appear in the list.
+    *   Click one of them (3), open the **Headers** tab (4), and scroll down to **Request Headers**.
+    *   Right-click the `Authorization` value (5) and choose **Copy value** (6). It starts with `Bearer ` and is much longer than the box shows, which is why copying by hand often truncates it.
+
+    ![Chrome DevTools with the Network tab filtered to graphql and the Authorization header's Copy value menu open](docs/token-network-panel.png)
+
+    *The token is blurred in this screenshot. Treat yours like a password.*
 
 5.  **Tell the Script Your Authorization Token:**
     The easiest way is to create a file named `.env` in the `imdb-to-justwatch` folder containing one line:
@@ -99,8 +97,6 @@ This script helps you import your IMDb watchlist and ratings into your JustWatch
         ```
     </details>
     </details>
-
-    Whichever method you use, copy the token by **right-clicking the `Authorization` field and choosing "Copy value"**. Selecting the text by hand can give you a shortened version ending in `…`, which JustWatch rejects.
 
 
 ### Running the Importers:

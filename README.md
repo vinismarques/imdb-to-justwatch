@@ -120,6 +120,13 @@ Make sure you have:
 
 The scripts will show progress and log any issues they encounter.
 
+*   **To preview a run without changing your account:**
+    Add `--dry-run` to any of the three commands, e.g.:
+    ```bash
+    uv run import_likelist.py --dry-run
+    ```
+    Every title is still looked up on JustWatch, so you can check what each one matched and which ones weren't found, but nothing is added, liked, or disliked. Worth doing first: a wrong match is easier to catch here than to undo later.
+
 
 ### Notes:
 *   The scripts have a built-in delay between actions to be kind to the JustWatch servers and avoid being blocked.

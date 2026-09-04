@@ -13,6 +13,7 @@ from imdb_justwatch_util.shared import (
     DEFAULT_LANGUAGE,
     REQUEST_DELAY_SECONDS,
     map_imdb_type_to_justwatch,
+    parse_dry_run,
 )
 from loguru import logger
 
@@ -32,11 +33,11 @@ LIKE_MIN_RATING = 7
 DISLIKE_MAX_RATING = 4
 
 # Outcomes that reached the JustWatch API, and so must be followed by a delay.
-NETWORK_OUTCOMES = frozenset({"liked", "disliked", "not_found", "failed"})
+NETWORK_OUTCOMES = frozenset({"liked", "disliked", "would_like", "would_dislike", "not_found", "failed"})
 
 
 def process_likelist_entry(
-    client: JustWatchClient, imdb_title: str, imdb_type: str, imdb_year: str, imdb_rating: str
+    client: JustWatchClient, imdb_title: str, imdb_type: str, imdb_year: str, imdb_rating: str, dry_run: bool
 ) -> str:
     """Likes or dislikes a single ratings CSV entry. Returns an outcome key for the run summary."""
     if not imdb_rating:
@@ -76,6 +77,10 @@ def process_likelist_entry(
 
     logger.info(f"Found JustWatch ID '{justwatch_id}' for '{imdb_title}'.")
 
+    if dry_run:
+        logger.info(f"[dry run] Would {action} '{imdb_title}' (ID: {justwatch_id}).")
+        return f"would_{action}"
+
     if action == "like":
         if client.add_to_likelist(justwatch_id):
             logger.success(f"Successfully liked '{imdb_title}' (ID: {justwatch_id}).")
@@ -90,8 +95,10 @@ def process_likelist_entry(
     return "failed"
 
 
-def main() -> None:
+def main(dry_run: bool) -> None:
     logger.info("Starting IMDb ratings import to JustWatch likelist...")
+    if dry_run:
+        logger.info("Dry run: titles will be looked up, but nothing will be liked or disliked on your account.")
 
     if not os.path.exists(CSV_FILE_PATH):
         logger.error(f"CSV file not found at '{CSV_FILE_PATH}'. Please ensure it exists.")
@@ -141,7 +148,9 @@ def main() -> None:
                         outcomes["empty_title"] += 1
                         continue
 
-                    outcome = process_likelist_entry(client, imdb_title, imdb_type_str, imdb_year_str, imdb_rating_str)
+                    outcome = process_likelist_entry(
+                        client, imdb_title, imdb_type_str, imdb_year_str, imdb_rating_str, dry_run
+                    )
                     outcomes[outcome] += 1
 
                 except Exception:  # Catching general exceptions for safety during row processing
@@ -173,4 +182,4 @@ if __name__ == "__main__":
     logger.remove()
     logger.add(sys.stderr, level="INFO")
 
-    main()
+    main(parse_dry_run("Like or dislike titles on JustWatch based on your IMDb ratings."))

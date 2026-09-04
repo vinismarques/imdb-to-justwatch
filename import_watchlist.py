@@ -12,6 +12,7 @@ from imdb_justwatch_util.shared import (
     DEFAULT_LANGUAGE,
     REQUEST_DELAY_SECONDS,
     map_imdb_type_to_justwatch,
+    parse_dry_run,
 )
 from loguru import logger
 
@@ -26,7 +27,9 @@ IMDB_TYPE_COLUMN = "Title Type"
 IMDB_YEAR_COLUMN = "Year"
 
 
-def process_watchlist_entry(client: JustWatchClient, imdb_title: str, imdb_type: str, imdb_year: str) -> None:
+def process_watchlist_entry(
+    client: JustWatchClient, imdb_title: str, imdb_type: str, imdb_year: str, dry_run: bool
+) -> None:
     """Processes a single entry from the watchlist CSV."""
     logger.info(f"Processing: Title='{imdb_title}', Type='{imdb_type}', Year='{imdb_year}'")
 
@@ -44,7 +47,9 @@ def process_watchlist_entry(client: JustWatchClient, imdb_title: str, imdb_type:
 
     if justwatch_id:
         logger.info(f"Found JustWatch ID '{justwatch_id}' for '{imdb_title}'.")
-        if client.add_to_watchlist(justwatch_id):
+        if dry_run:
+            logger.info(f"[dry run] Would add '{imdb_title}' (ID: {justwatch_id}) to JustWatch watchlist.")
+        elif client.add_to_watchlist(justwatch_id):
             logger.success(f"Successfully added '{imdb_title}' (ID: {justwatch_id}) to JustWatch watchlist.")
         else:
             logger.error(f"Failed to add '{imdb_title}' (ID: {justwatch_id}) to JustWatch watchlist.")
@@ -52,8 +57,10 @@ def process_watchlist_entry(client: JustWatchClient, imdb_title: str, imdb_type:
         logger.warning(f"Could not find '{imdb_title}' on JustWatch. Skipping.")
 
 
-def main() -> None:
+def main(dry_run: bool) -> None:
     logger.info("Starting IMDb watchlist import to JustWatch...")
+    if dry_run:
+        logger.info("Dry run: titles will be looked up, but nothing will be added to your account.")
 
     if not os.path.exists(CSV_FILE_PATH):
         logger.error(f"CSV file not found at '{CSV_FILE_PATH}'. Please ensure it exists.")
@@ -103,7 +110,7 @@ def main() -> None:
                         logger.warning(f"Skipping row {row_num_for_logging} due to empty title.")
                         continue
 
-                    process_watchlist_entry(client, imdb_title, imdb_type_str, imdb_year_str)
+                    process_watchlist_entry(client, imdb_title, imdb_type_str, imdb_year_str, dry_run)
                     entries_processed += 1
 
                 except Exception:  # Catching general exceptions for safety during row processing
@@ -131,4 +138,4 @@ if __name__ == "__main__":
     logger.remove()
     logger.add(sys.stderr, level="INFO")
 
-    main()
+    main(parse_dry_run("Import your IMDb watchlist into your JustWatch watchlist."))

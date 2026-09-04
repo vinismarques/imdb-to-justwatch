@@ -4,6 +4,7 @@ import os
 import re
 from collections.abc import Sequence
 from difflib import SequenceMatcher
+from time import sleep
 
 import requests
 from loguru import logger
@@ -13,10 +14,19 @@ class AuthenticationError(Exception):
     """The JustWatch token was rejected. Every later request would fail the same way."""
 
 
+class RateLimitedError(Exception):
+    """JustWatch throttled the run and kept throttling it. The title's status is unknown."""
+
+
 # Below this similarity a candidate is a different film, not a spelling variant of the one we asked for.
 TITLE_MATCH_THRESHOLD = 0.85
 
 YEAR_TOLERANCE = 1
+
+# A throttled request tells us nothing about the title, so retry before giving up. Reporting
+# a 429 as 'not_found' would send the user to re-add a title JustWatch may well have.
+RATE_LIMIT_MAX_ATTEMPTS = 3
+RATE_LIMIT_BACKOFF_SECONDS = 2
 
 # Widened window for the second attempt. Dropping the year constraint entirely matched
 # 'The Wave' (2008) to an unrelated 2015 film, so the retry stays anchored to the year.
@@ -341,33 +351,55 @@ class JustWatchClient:
         # Referer can be dynamic based on operation, or a sensible default
         self.headers["referer"] = f"https://www.justwatch.com/{country.lower()}/watchlist"
 
+    @staticmethod
+    def _retry_after_seconds(response, attempt: int) -> float:
+        """Honours a Retry-After header when JustWatch sends one, else backs off exponentially."""
+        header = response.headers.get("Retry-After") if response is not None else None
+        if header:
+            try:
+                return max(0.0, float(header))
+            except ValueError:
+                # Retry-After may also be an HTTP-date, which the backoff below covers well enough.
+                logger.debug(f"Could not read Retry-After '{header}' as seconds.")
+        return RATE_LIMIT_BACKOFF_SECONDS * 2 ** (attempt - 1)
+
     def _make_request(self, query: str, variables: dict) -> dict | None:
         payload = {"query": query, "variables": variables}
-        try:
-            response = requests.post(self.BASE_URL, headers=self.headers, json=payload)
-            response.raise_for_status()  # Raises an HTTPError for bad responses (4XX or 5XX)
-            return response.json()
-        except requests.exceptions.JSONDecodeError as e:
-            logger.error(f"Failed to decode JSON response: {e}")
-            logger.error(f"Response content: {response.content if 'response' in locals() else 'No response object'}")
-            return None
-        except requests.exceptions.HTTPError as e:
-            status = e.response.status_code if e.response is not None else None
-            if status in (401, 403):
-                logger.error(f"JustWatch rejected the token ({status}). Copy a fresh one and try again.")
-                logger.error(f"Response content: {e.response.content if e.response is not None else 'None'}")
-                msg = f"JustWatch rejected JUSTWATCH_AUTH_TOKEN ({status})."
-                raise AuthenticationError(msg) from e
-            logger.error(f"API request failed: {e}")
-            logger.error(f"Response content: {response.content if 'response' in locals() else 'No response object'}")
-            return None
-        except requests.exceptions.RequestException as e:
-            logger.error(f"API request failed: {e}")
-            logger.error(f"Response content: {response.content if 'response' in locals() else 'No response object'}")
-            return None
-        except ValueError as e:
-            logger.error(f"Value error during request (possibly encoding or invalid data): {e}")
-            return None
+        for attempt in range(1, RATE_LIMIT_MAX_ATTEMPTS + 1):
+            try:
+                response = requests.post(self.BASE_URL, headers=self.headers, json=payload)
+                response.raise_for_status()  # Raises an HTTPError for bad responses (4XX or 5XX)
+                return response.json()
+            except requests.exceptions.JSONDecodeError as e:
+                logger.error(f"Failed to decode JSON response: {e}")
+                logger.error(f"Response content: {response.content if 'response' in locals() else 'No response'}")
+                return None
+            except requests.exceptions.HTTPError as e:
+                status = e.response.status_code if e.response is not None else None
+                if status in (401, 403):
+                    logger.error(f"JustWatch rejected the token ({status}). Copy a fresh one and try again.")
+                    logger.error(f"Response content: {e.response.content if e.response is not None else 'None'}")
+                    msg = f"JustWatch rejected JUSTWATCH_AUTH_TOKEN ({status})."
+                    raise AuthenticationError(msg) from e
+                if status == 429:
+                    if attempt == RATE_LIMIT_MAX_ATTEMPTS:
+                        msg = f"JustWatch is rate limiting this run (429 after {attempt} attempts)."
+                        raise RateLimitedError(msg) from e
+                    wait = self._retry_after_seconds(e.response, attempt)
+                    logger.warning(f"JustWatch returned 429. Waiting {wait}s before attempt {attempt + 1}.")
+                    sleep(wait)
+                    continue
+                logger.error(f"API request failed: {e}")
+                logger.error(f"Response content: {response.content if 'response' in locals() else 'No response'}")
+                return None
+            except requests.exceptions.RequestException as e:
+                logger.error(f"API request failed: {e}")
+                logger.error(f"Response content: {response.content if 'response' in locals() else 'No response'}")
+                return None
+            except ValueError as e:
+                logger.error(f"Value error during request (possibly encoding or invalid data): {e}")
+                return None
+        return None
 
     def _search_for_title(
         self,

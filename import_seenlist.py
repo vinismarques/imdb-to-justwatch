@@ -7,7 +7,7 @@ from time import sleep
 from dotenv import load_dotenv
 from loguru import logger
 
-from imdb_justwatch_util.api import AuthenticationError, JustWatchClient
+from imdb_justwatch_util.api import AuthenticationError, JustWatchClient, RateLimitedError
 from imdb_justwatch_util.shared import (
     DEFAULT_COUNTRY,
     DEFAULT_LANGUAGE,
@@ -145,6 +145,18 @@ def main(dry_run: bool) -> None:
 
                 except AuthenticationError as e:
                     logger.critical(f"{e} Aborting: every remaining title would fail the same way.")
+                    break
+
+                except RateLimitedError as e:
+                    logger.critical(f"{e} Aborting: a throttled title cannot be reported as missing.")
+                    unmatched.append(
+                        {
+                            "Title": imdb_title,
+                            "Title Type": imdb_type_str,
+                            "Year": imdb_year_str,
+                            "Reason": "rate_limited",
+                        }
+                    )
                     break
 
                 except Exception:

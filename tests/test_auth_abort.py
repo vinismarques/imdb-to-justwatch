@@ -21,7 +21,9 @@ def test_import_stops_after_the_first_rejected_request(monkeypatch, write_csv, m
     lookups = []
 
     class RejectingClient:
-        def get_title_id(self, title_name: str, title_type: str, release_year: int | None) -> str:
+        def get_title_id(
+            self, title_name: str, title_type: str, release_year: int | None, original_title: str = ""
+        ) -> str:
             lookups.append(title_name)
             msg = "JustWatch rejected JUSTWATCH_AUTH_TOKEN (401)."
             raise api.AuthenticationError(msg)

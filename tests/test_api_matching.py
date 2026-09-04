@@ -138,3 +138,17 @@ def test_failed_request_returns_none(client, monkeypatch) -> None:
     monkeypatch.setattr(api.JustWatchClient, "_make_request", lambda self, query, variables: None)
 
     assert client.get_title_id("Anything", "MOVIE", 2001) is None
+
+
+def test_original_title_is_accepted(client, fake_search) -> None:
+    """JustWatch answers with the original title where IMDb carries the English one."""
+    fake_search(lambda _filter: search_results(("Hauru no ugoku shiro", 2004, "tm14180")))
+
+    found = client.get_title_id("Howl's Moving Castle", "MOVIE", 2004, original_title="Hauru no ugoku shiro")
+    assert found == "tm14180"
+
+
+def test_original_title_does_not_widen_the_net_to_a_different_film(client, fake_search) -> None:
+    fake_search(lambda _filter: search_results(("Some Other Film", 2004, "tm999")))
+
+    assert client.get_title_id("Howl's Moving Castle", "MOVIE", 2004, original_title="Hauru no ugoku shiro") is None

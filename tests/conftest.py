@@ -10,10 +10,14 @@ class FakeClient:
         self.missing_titles = missing_titles or set()
         self.mutations_succeed = mutations_succeed
         self.lookups: list[str] = []
+        self.original_titles: list[str] = []
         self.calls: list[tuple[str, str]] = []
 
-    def get_title_id(self, title_name: str, title_type: str, release_year: int | None) -> str | None:
+    def get_title_id(
+        self, title_name: str, title_type: str, release_year: int | None, original_title: str = ""
+    ) -> str | None:
         self.lookups.append(title_name)
+        self.original_titles.append(original_title)
         if title_name in self.missing_titles:
             return None
         return f"tm_{title_name.replace(' ', '_')}"

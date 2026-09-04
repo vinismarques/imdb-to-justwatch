@@ -28,13 +28,19 @@ CSV_FILE_PATH = os.path.join("exports", "watchlist.csv")  # Path to the IMDb wat
 IMDB_TITLE_COLUMN = "Title"
 IMDB_TYPE_COLUMN = "Title Type"
 IMDB_YEAR_COLUMN = "Year"
+IMDB_ORIGINAL_TITLE_COLUMN = "Original Title"
 
 # Outcomes the user has to follow up on by hand.
 NEEDS_ATTENTION = frozenset({"not_found", "unsupported_type", "failed"})
 
 
 def process_watchlist_entry(
-    client: JustWatchClient, imdb_title: str, imdb_type: str, imdb_year: str, dry_run: bool
+    client: JustWatchClient,
+    imdb_title: str,
+    imdb_type: str,
+    imdb_year: str,
+    dry_run: bool,
+    imdb_original_title: str = "",
 ) -> str:
     """Processes a single entry from the watchlist CSV."""
     logger.info(f"Processing: Title='{imdb_title}', Type='{imdb_type}', Year='{imdb_year}'")
@@ -49,7 +55,12 @@ def process_watchlist_entry(
         logger.warning(f"Invalid year format '{imdb_year}' for title '{imdb_title}'. Attempting search without year.")
         year_int = None
 
-    justwatch_id = client.get_title_id(title_name=imdb_title, title_type=justwatch_type, release_year=year_int)
+    justwatch_id = client.get_title_id(
+        title_name=imdb_title,
+        title_type=justwatch_type,
+        release_year=year_int,
+        original_title=imdb_original_title,
+    )
 
     if not justwatch_id:
         logger.warning(f"Could not find '{imdb_title}' on JustWatch. Skipping.")
@@ -113,12 +124,15 @@ def main(dry_run: bool) -> None:
                     imdb_title = row.get(IMDB_TITLE_COLUMN, "").strip()
                     imdb_type_str = row.get(IMDB_TYPE_COLUMN, "").strip()
                     imdb_year_str = row.get(IMDB_YEAR_COLUMN, "").strip()
+                    imdb_original_title = row.get(IMDB_ORIGINAL_TITLE_COLUMN, "").strip()
 
                     if not imdb_title:
                         logger.warning(f"Skipping row {row_num_for_logging} due to empty title.")
                         continue
 
-                    outcome = process_watchlist_entry(client, imdb_title, imdb_type_str, imdb_year_str, dry_run)
+                    outcome = process_watchlist_entry(
+                        client, imdb_title, imdb_type_str, imdb_year_str, dry_run, imdb_original_title
+                    )
                     entries_processed += 1
                     if outcome in NEEDS_ATTENTION:
                         unmatched.append(

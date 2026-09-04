@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Sequence
 from difflib import SequenceMatcher
 
 import requests
@@ -33,6 +34,16 @@ def title_distance(query: str, candidate: str) -> float:
 
 def titles_match(query: str, candidate: str) -> bool:
     return title_distance(query, candidate) <= 1.0 - TITLE_MATCH_THRESHOLD
+
+
+def best_alias_distance(aliases: Sequence[str], candidate: str) -> float:
+    """Distance to whichever alias fits the candidate best.
+
+    JustWatch answers with one name per title, and which one varies: the English title for
+    'WALL-E', the original for 'Shingeki no Kyojin', the full canonical for 'Borat: Cultural
+    Learnings...'. IMDb ships both names per row, so a title is a match when either one fits.
+    """
+    return min(title_distance(alias, candidate) for alias in aliases)
 
 
 class JustWatchClient:
@@ -359,9 +370,14 @@ class JustWatchClient:
             return None
 
     def _search_for_title(
-        self, title_name: str, title_type: str, year: int | None, tolerance: int = YEAR_TOLERANCE
+        self,
+        title_name: str,
+        title_type: str,
+        year: int | None,
+        aliases: Sequence[str],
+        tolerance: int = YEAR_TOLERANCE,
     ) -> str | None:
-        """Returns the ID of the first result whose title matches, or None."""
+        """Returns the ID of the first result matching any alias, or None."""
         search_filter = {
             "objectTypes": [title_type.upper()],
             "excludeIrrelevantTitles": False,
@@ -388,8 +404,8 @@ class JustWatchClient:
             node = edge["node"]
             found_title = node["content"]["title"]
             found_year = node["content"].get("originalReleaseYear", "N/A")
-            if not titles_match(title_name, found_title):
-                logger.debug(f"Ignoring '{found_title}' ({found_year}): does not match '{title_name}'.")
+            if best_alias_distance(aliases, found_title) > 1.0 - TITLE_MATCH_THRESHOLD:
+                logger.debug(f"Ignoring '{found_title}' ({found_year}): does not match any of {list(aliases)}.")
                 continue
             candidates.append(node)
 
@@ -397,15 +413,26 @@ class JustWatchClient:
             return None
 
         # Results arrive by popularity, which ranks a similarly-named film above the one we asked for.
-        best = min(candidates, key=lambda node: title_distance(title_name, node["content"]["title"]))
+        best = min(candidates, key=lambda node: best_alias_distance(aliases, node["content"]["title"]))
         logger.success(
             f"Found: '{best['content']['title']}' ({best.get('objectType', 'N/A')}, "
             f"{best['content'].get('originalReleaseYear', 'N/A')}) with ID: {best['id']}"
         )
         return best["id"]
 
-    def get_title_id(self, title_name: str, title_type: str, release_year: int | str | None = None) -> str | None:
+    def get_title_id(
+        self,
+        title_name: str,
+        title_type: str,
+        release_year: int | str | None = None,
+        original_title: str | None = None,
+    ) -> str | None:
         logger.info(f"Searching for {title_type} '{title_name}' (Year: {release_year or 'Any'})...")
+
+        aliases = [title_name]
+        if original_title and normalize_title(original_title) != normalize_title(title_name):
+            aliases.append(original_title)
+            logger.debug(f"Also accepting the original title '{original_title}' for '{title_name}'.")
 
         year: int | None = None
         if release_year:
@@ -416,13 +443,16 @@ class JustWatchClient:
                     f"Invalid release year '{release_year}' for '{title_name}'. Searching without year constraint."
                 )
 
-        found_id = self._search_for_title(title_name, title_type, year)
+        found_id = self._search_for_title(title_name, title_type, year, aliases)
         if found_id is None and year is not None:
             logger.info(
                 f"No match within {YEAR_TOLERANCE}y of {year} for '{title_name}'. "
                 f"Widening to {FALLBACK_YEAR_TOLERANCE}y."
             )
-            found_id = self._search_for_title(title_name, title_type, year, FALLBACK_YEAR_TOLERANCE)
+            found_id = self._search_for_title(title_name, title_type, year, aliases, FALLBACK_YEAR_TOLERANCE)
+        if found_id is None and len(aliases) > 1:
+            logger.info(f"Retrying the search under the original title '{original_title}'.")
+            found_id = self._search_for_title(aliases[1], title_type, year, aliases, FALLBACK_YEAR_TOLERANCE)
         if found_id is None:
             logger.warning(f"No result for '{title_name}' ({title_type}, {release_year}) had a matching title.")
         return found_id

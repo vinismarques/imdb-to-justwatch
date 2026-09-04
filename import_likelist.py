@@ -30,6 +30,7 @@ IMDB_TITLE_COLUMN = "Title"
 IMDB_TYPE_COLUMN = "Title Type"
 IMDB_YEAR_COLUMN = "Year"
 IMDB_RATING_COLUMN = "Your Rating"
+IMDB_ORIGINAL_TITLE_COLUMN = "Original Title"
 
 # --- Rating -> action thresholds (IMDb scale is 1-10) ---
 LIKE_MIN_RATING = 7
@@ -43,7 +44,13 @@ NEEDS_ATTENTION = frozenset({"not_found", "unsupported_type", "failed", "invalid
 
 
 def process_likelist_entry(
-    client: JustWatchClient, imdb_title: str, imdb_type: str, imdb_year: str, imdb_rating: str, dry_run: bool
+    client: JustWatchClient,
+    imdb_title: str,
+    imdb_type: str,
+    imdb_year: str,
+    imdb_rating: str,
+    dry_run: bool,
+    imdb_original_title: str = "",
 ) -> str:
     """Likes or dislikes a single ratings CSV entry. Returns an outcome key for the run summary."""
     if not imdb_rating:
@@ -76,7 +83,12 @@ def process_likelist_entry(
         logger.warning(f"Invalid year format '{imdb_year}' for title '{imdb_title}'. Attempting search without year.")
         year_int = None
 
-    justwatch_id = client.get_title_id(title_name=imdb_title, title_type=justwatch_type, release_year=year_int)
+    justwatch_id = client.get_title_id(
+        title_name=imdb_title,
+        title_type=justwatch_type,
+        release_year=year_int,
+        original_title=imdb_original_title,
+    )
     if not justwatch_id:
         logger.warning(f"Could not find '{imdb_title}' on JustWatch for likelist. Skipping.")
         return "not_found"
@@ -148,6 +160,7 @@ def main(dry_run: bool) -> None:
                     imdb_title = row.get(IMDB_TITLE_COLUMN, "").strip()
                     imdb_type_str = row.get(IMDB_TYPE_COLUMN, "").strip()
                     imdb_year_str = row.get(IMDB_YEAR_COLUMN, "").strip()
+                    imdb_original_title = row.get(IMDB_ORIGINAL_TITLE_COLUMN, "").strip()
                     imdb_rating_str = row.get(IMDB_RATING_COLUMN, "").strip()
 
                     if not imdb_title:
@@ -156,7 +169,7 @@ def main(dry_run: bool) -> None:
                         continue
 
                     outcome = process_likelist_entry(
-                        client, imdb_title, imdb_type_str, imdb_year_str, imdb_rating_str, dry_run
+                        client, imdb_title, imdb_type_str, imdb_year_str, imdb_rating_str, dry_run, imdb_original_title
                     )
                     outcomes[outcome] += 1
                     if outcome in NEEDS_ATTENTION:

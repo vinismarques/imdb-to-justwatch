@@ -87,18 +87,33 @@ def test_title_is_found_when_justwatch_dates_it_a_year_later(client, fake_search
     assert client.get_title_id("The Gentlemen", "MOVIE", 2019) == "tm441050"
 
 
-def test_falls_back_to_a_search_without_the_year(client, fake_search) -> None:
-    """Some titles are dated years apart; the year must not be the reason we give up."""
+def test_falls_back_to_a_wider_year_window(client, fake_search) -> None:
+    """Some titles are dated a few years apart; the year must not be the reason we give up."""
 
     def responder(search_filter: dict) -> dict:
-        if search_filter.get("releaseYear"):
-            return search_results()
-        return search_results(("Frailty", 2002, "tm58787"))
+        window = search_filter["releaseYear"]
+        if window["min"] <= 1999 <= window["max"]:
+            return search_results(("Frailty", 1999, "tm58787"))
+        return search_results()
 
     windows = fake_search(responder)
 
-    assert client.get_title_id("Frailty", "MOVIE", 1996) == "tm58787"
-    assert windows[-1] is None, "the retry must drop the year filter"
+    assert client.get_title_id("Frailty", "MOVIE", 2001) == "tm58787"
+    assert windows[-1] == {"min": 2001 - api.FALLBACK_YEAR_TOLERANCE, "max": 2001 + api.FALLBACK_YEAR_TOLERANCE}
+
+
+def test_the_widened_window_still_rejects_a_distant_year(client, fake_search) -> None:
+    """Dropping the year entirely matched 'The Wave' (2008) to an unrelated 2015 film."""
+
+    def responder(search_filter: dict) -> dict:
+        window = search_filter["releaseYear"]
+        if window["min"] <= 2015 <= window["max"]:
+            return search_results(("The Wave", 2015, "tm207546"))
+        return search_results()
+
+    fake_search(responder)
+
+    assert client.get_title_id("The Wave", "MOVIE", 2008) is None
 
 
 def test_exact_title_wins_over_a_more_popular_near_miss(client, fake_search) -> None:

@@ -17,6 +17,10 @@ TITLE_MATCH_THRESHOLD = 0.85
 
 YEAR_TOLERANCE = 1
 
+# Widened window for the second attempt. Dropping the year constraint entirely matched
+# 'The Wave' (2008) to an unrelated 2015 film, so the retry stays anchored to the year.
+FALLBACK_YEAR_TOLERANCE = 3
+
 
 def normalize_title(title: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
@@ -354,7 +358,9 @@ class JustWatchClient:
             logger.error(f"Value error during request (possibly encoding or invalid data): {e}")
             return None
 
-    def _search_for_title(self, title_name: str, title_type: str, year: int | None) -> str | None:
+    def _search_for_title(
+        self, title_name: str, title_type: str, year: int | None, tolerance: int = YEAR_TOLERANCE
+    ) -> str | None:
         """Returns the ID of the first result whose title matches, or None."""
         search_filter = {
             "objectTypes": [title_type.upper()],
@@ -364,7 +370,7 @@ class JustWatchClient:
         }
         if year is not None:
             # JustWatch and IMDb disagree by a year on titles with staggered releases.
-            search_filter["releaseYear"] = {"min": year - YEAR_TOLERANCE, "max": year + YEAR_TOLERANCE}
+            search_filter["releaseYear"] = {"min": year - tolerance, "max": year + tolerance}
 
         variables = {
             "searchTitlesSortBy": "POPULAR",
@@ -412,8 +418,11 @@ class JustWatchClient:
 
         found_id = self._search_for_title(title_name, title_type, year)
         if found_id is None and year is not None:
-            logger.info(f"No match near {year} for '{title_name}'. Retrying without the year.")
-            found_id = self._search_for_title(title_name, title_type, None)
+            logger.info(
+                f"No match within {YEAR_TOLERANCE}y of {year} for '{title_name}'. "
+                f"Widening to {FALLBACK_YEAR_TOLERANCE}y."
+            )
+            found_id = self._search_for_title(title_name, title_type, year, FALLBACK_YEAR_TOLERANCE)
         if found_id is None:
             logger.warning(f"No result for '{title_name}' ({title_type}, {release_year}) had a matching title.")
         return found_id

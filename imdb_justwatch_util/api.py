@@ -53,6 +53,46 @@ class JustWatchClient:
     }
     """
 
+    ADD_TO_LIKELIST_MUTATION = """
+    mutation SetInLikelist($input: SetInTitleListInput!) {
+      setInLikelist(input: $input) {
+        title {
+          id
+          likelistEntry {
+            createdAt
+            __typename
+          }
+          dislikelistEntry {
+            createdAt
+            __typename
+          }
+          __typename
+        }
+        __typename
+      }
+    }
+    """
+
+    ADD_TO_DISLIKELIST_MUTATION = """
+    mutation SetInDislikelist($input: SetInTitleListInput!) {
+      setInDislikelist(input: $input) {
+        title {
+          id
+          dislikelistEntry {
+            createdAt
+            __typename
+          }
+          likelistEntry {
+            createdAt
+            __typename
+          }
+          __typename
+        }
+        __typename
+      }
+    }
+    """
+
     ADD_TO_SEENLIST_MUTATION = """
     mutation SetInSeenlist($input: SetInSeenlistInput!, $country: Country!, $language: Language!, $includeUnreleasedEpisodes: Boolean!, $watchNowFilter: WatchNowOfferFilter!, $platform: Platform! = WEB) {
       setInSeenlist(input: $input) {
@@ -317,6 +357,26 @@ class JustWatchClient:
             logger.success(f"Successfully added ID '{justwatch_id}' to watchlist.")
             return True
         logger.error(f"Failed to add ID '{justwatch_id}' to watchlist. Response: {response_data}")
+        return False
+
+    def add_to_likelist(self, justwatch_id: str) -> bool:
+        logger.info(f"Adding ID '{justwatch_id}' to likelist...")
+        variables = {"input": {"id": justwatch_id, "state": True}}
+        response_data = self._make_request(self.ADD_TO_LIKELIST_MUTATION, variables)
+        if response_data and response_data.get("data", {}).get("setInLikelist", {}).get("title"):
+            logger.success(f"Successfully added ID '{justwatch_id}' to likelist.")
+            return True
+        logger.error(f"Failed to add ID '{justwatch_id}' to likelist. Response: {response_data}")
+        return False
+
+    def add_to_dislikelist(self, justwatch_id: str) -> bool:
+        logger.info(f"Adding ID '{justwatch_id}' to dislikelist...")
+        variables = {"input": {"id": justwatch_id, "state": True}}
+        response_data = self._make_request(self.ADD_TO_DISLIKELIST_MUTATION, variables)
+        if response_data and response_data.get("data", {}).get("setInDislikelist", {}).get("title"):
+            logger.success(f"Successfully added ID '{justwatch_id}' to dislikelist.")
+            return True
+        logger.error(f"Failed to add ID '{justwatch_id}' to dislikelist. Response: {response_data}")
         return False
 
     def add_to_seenlist(self, justwatch_id: str) -> bool:

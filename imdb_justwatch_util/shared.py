@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import sys
+from datetime import datetime
+from pathlib import Path
 
 from loguru import logger
 
@@ -8,6 +11,18 @@ from loguru import logger
 DEFAULT_COUNTRY = "US"
 DEFAULT_LANGUAGE = "en-US"
 REQUEST_DELAY_SECONDS = 1
+LOG_DIR = Path("logs")
+
+
+def configure_logging(script_name: str) -> Path:
+    """Mirrors the run to a timestamped file, so warnings outlive the terminal scrollback."""
+    LOG_DIR.mkdir(exist_ok=True)
+    log_path = LOG_DIR / f"{script_name}-{datetime.now():%Y%m%d-%H%M%S}.log"
+    logger.remove()
+    logger.add(sys.stderr, level="INFO")
+    logger.add(log_path, level="DEBUG", encoding="utf-8")
+    logger.info(f"Writing a full log of this run to {log_path}")
+    return log_path
 
 
 def parse_dry_run(description: str) -> bool:

@@ -118,7 +118,11 @@ Make sure you have:
     ```
     This reads the `Your Rating` column (1-10) from the same `ratings.csv` and gives each title a thumbs up or down on JustWatch: ratings of **7 or higher** are liked, **4 or lower** are disliked, and everything in between (or unrated) is skipped. Adjust `LIKE_MIN_RATING` / `DISLIKE_MAX_RATING` in `import_likelist.py` to change the thresholds.
 
-The scripts will show progress and log any issues they encounter.
+The scripts will show progress and log any issues they encounter. Every run also writes a full log to `logs/`, so you don't have to copy the output before closing the terminal. To see just the titles that need your attention:
+
+```bash
+grep -E "WARNING|ERROR" logs/import_likelist-*.log
+```
 
 *   **To preview a run without changing your account:**
     Add `--dry-run` to any of the three commands, e.g.:

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 import os
-import sys
 from time import sleep
 
 from dotenv import load_dotenv
@@ -13,6 +12,7 @@ from imdb_justwatch_util.shared import (
     DEFAULT_COUNTRY,
     DEFAULT_LANGUAGE,
     REQUEST_DELAY_SECONDS,
+    configure_logging,
     map_imdb_type_to_justwatch,
     parse_dry_run,
 )
@@ -136,7 +136,7 @@ def main(dry_run: bool) -> None:
 
 
 if __name__ == "__main__":
-    logger.remove()
-    logger.add(sys.stderr, level="INFO")
+    dry_run = parse_dry_run("Import your IMDb watchlist into your JustWatch watchlist.")
+    configure_logging("import_watchlist")
 
-    main(parse_dry_run("Import your IMDb watchlist into your JustWatch watchlist."))
+    main(dry_run)
